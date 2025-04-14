@@ -12,28 +12,36 @@ use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Illuminate\Support\Facades\Auth;
 
 class TaskResource extends Resource
 {
     protected static ?string $model = Task::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-rectangle-stack';
+    protected static ?string $navigationIcon = 'heroicon-o-check-circle';
 
     public static function form(Form $form): Form
     {
         return $form
             ->schema([
-                Forms\Components\TextInput::make('content')
+                Forms\Components\Select::make('user_id')
+                    ->relationship('user', 'name')
+                    ->required()
+                    ->preload()
+                    ->searchable()
+                    ->visible(fn() => auth()->user()->hasRole('admin'))
+                    ->default(auth()->id()),
+                Forms\Components\Hidden::make('user_id')
+                    ->default(auth()->id())
+                    ->visible(fn() => !auth()->user()->hasRole('admin')),
+                Forms\Components\TextInput::make('title')
                     ->required()
                     ->maxLength(255),
-                Forms\Components\TextInput::make('title')
+                Forms\Components\TextInput::make('content')
                     ->required()
                     ->maxLength(255),
                 Forms\Components\Toggle::make('is_done')
                     ->required(),
-                Forms\Components\TextInput::make('user_id')
-                    ->required()
-                    ->numeric(),
             ]);
     }
 
@@ -41,15 +49,16 @@ class TaskResource extends Resource
     {
         return $table
             ->columns([
+                Tables\Columns\TextColumn::make('user.name')
+                    ->searchable()
+                    ->sortable()
+                    ->visible(fn() => auth()->user()->hasRole('admin')),
                 Tables\Columns\TextColumn::make('content')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('title')
                     ->searchable(),
                 Tables\Columns\IconColumn::make('is_done')
                     ->boolean(),
-                Tables\Columns\TextColumn::make('user_id')
-                    ->numeric()
-                    ->sortable(),
                 Tables\Columns\TextColumn::make('deleted_at')
                     ->dateTime()
                     ->sortable()
@@ -81,7 +90,8 @@ class TaskResource extends Resource
     public static function getRelations(): array
     {
         return [
-            //
+            // add user relation manager
+            // RelationManagers\UserRelationManager::class,
         ];
     }
 
@@ -96,9 +106,15 @@ class TaskResource extends Resource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        $query = parent::getEloquentQuery()
             ->withoutGlobalScopes([
                 SoftDeletingScope::class,
             ]);
+
+        if (!Auth::user()->hasRole('admin')) {
+            $query->where('user_id', Auth::id());
+        }
+
+        return $query;
     }
 }
